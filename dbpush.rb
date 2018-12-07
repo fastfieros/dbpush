@@ -18,6 +18,7 @@ OptionParser.new do |opts|
   end
 end.parse!
 
+# Ensure that both required options were provided
 if not options.has_key? :token
   raise OptionParser::MissingArgument,"API token required"
 end
@@ -37,28 +38,17 @@ filepath = "/" + File.basename(filename)
 infile = File.new(filename, "rb")
 dbx = Dropbox::Client.new(options[:token])
 
-if infile.size > BLOCK_SIZE
-  # if file is larger than BLOCK_SIZE, break into multiple requests
-  # Start by creating an upload cursor
+# Read, and upload the first (maybe only) BLOCK_SIZE bytes of file
+buf = infile.read(BLOCK_SIZE)
+cursor = dbx.start_upload_session(buf)
 
-  buf = infile.read(BLOCK_SIZE)
-  cursor = dbx.start_upload_session(buf)
-
-  while (buf = infile.read(BLOCK_SIZE))
-    # upload this block
-    dbx.append_upload_session(cursor, buf)
-  end
-
-  # Complete the upload
-  dbx.finish_upload_session(cursor, filepath, "", mode:'overwrite')
-
-else
-  # otherwise read file entire contents into memory
-  filecontent = infile.read
-
-  # Perform singular upload
-  dbx.upload(filepath, filecontent, mode:'overwrite')
-
+# Continue uploading blocks while there is more data in the file
+while (buf = infile.read(BLOCK_SIZE))
+  # upload this block
+  dbx.append_upload_session(cursor, buf)
 end
+
+# Complete the upload
+dbx.finish_upload_session(cursor, filepath, "", mode:'overwrite')
 
 print "Upload complete"
